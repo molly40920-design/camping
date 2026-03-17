@@ -13,14 +13,15 @@ const NavButton = ({active, onClick, iconName, label}) => (
   )
 );
 
-const ItemCard = ({item, onToggle, onEdit, onDelete, isPersonal}) => {
+const ItemCard = ({item, onToggle, onEdit, onDelete, isPersonal, selectable, isSelected, onSelect}) => {
   const isMeal = item.type==='meal', isPrep = item.type==='prep';
   return React.createElement('div',{className:`flex items-center justify-between p-4 bg-white border rounded-xl shadow-sm transition-all anim-fadeIn ${item.isPacked?'border-emerald-200 bg-emerald-50/30':'border-slate-100'} ${isPersonal?'hover:shadow-md':''}`},
-    React.createElement('div',{className:"flex items-center gap-4 flex-1"},
+    React.createElement('div',{className:"flex items-center gap-3 flex-1"},
+      selectable && React.createElement('input',{type:'checkbox',checked:isSelected||false,onChange:()=>onSelect(item.id),className:"w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"}),
       React.createElement('button',{onClick:()=>onToggle(item),className:`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${item.isPacked?'bg-emerald-500 border-emerald-500 text-white':'border-slate-300 text-transparent'}`},
         React.createElement(Icon,{name:'check',size:18})
       ),
-      React.createElement('div',{className:"flex-1 min-w-0"},
+      React.createElement('div',{className:"flex-1 min-w-0 ml-1"},
         React.createElement('div',{className:"flex items-center gap-2 flex-wrap"},
           React.createElement('h3',{className:`font-semibold ${item.isPacked?'text-slate-500 line-through':'text-slate-800'}`},item.name),
           isMeal&&item.mealType&&React.createElement('span',{className:"text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium"},MEAL_TYPES[item.mealType])
@@ -31,19 +32,25 @@ const ItemCard = ({item, onToggle, onEdit, onDelete, isPersonal}) => {
         )
       )
     ),
-    React.createElement('div',{className:"flex items-center gap-1 shrink-0"},
-      React.createElement('button',{onClick:()=>onEdit(item),className:"p-2 text-slate-400 hover:text-emerald-600 rounded-lg"},React.createElement(Icon,{name:'edit2',size:16})),
-      React.createElement('button',{onClick:()=>onDelete(item),className:"p-2 text-slate-400 hover:text-red-500 rounded-lg"},React.createElement(Icon,{name:'trash2',size:16}))
+    React.createElement('div',{className:"flex items-center gap-1 shrink-0 ml-2"},
+      React.createElement('button',{onClick:()=>onEdit(item),className:"p-2 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors"},React.createElement(Icon,{name:'edit2',size:16})),
+      React.createElement('button',{onClick:()=>onDelete(item),className:"p-2 text-slate-400 hover:text-red-500 rounded-lg transition-colors"},React.createElement(Icon,{name:'trash2',size:16}))
     )
   );
 };
 
-const ItemList = ({items, onToggle, onEdit, onDelete, emptyMessage, emptyIcon, isPersonal}) => {
+const ItemList = ({items, onToggle, onEdit, onDelete, emptyMessage, emptyIcon, isPersonal, selectedIds, onSelectId}) => {
   if(items.length===0) return React.createElement(EmptyState,{icon:emptyIcon||React.createElement(Icon,{name:'tent',size:48,className:"text-slate-300"}),message:emptyMessage||"目前沒有裝備。點擊右下角新增！"});
-  return React.createElement('div',{className:"space-y-3"},items.map(item=>React.createElement(ItemCard,{key:item.id,item,onToggle,onEdit,onDelete,isPersonal})));
+  return React.createElement('div',{className:"space-y-3"},items.map(item=>
+    React.createElement(ItemCard,{key:item.id,item,onToggle,onEdit,onDelete,isPersonal,
+      selectable:!isPersonal,
+      isSelected:selectedIds?.includes(item.id),
+      onSelect:onSelectId
+    })
+  ));
 };
 
-const MealList = ({items, onToggle, onEdit, onDelete}) => {
+const MealList = ({items, onToggle, onEdit, onDelete, selectedIds, onSelectId}) => {
   if(items.length===0) return React.createElement(EmptyState,{icon:React.createElement(Icon,{name:'utensils',size:48,className:"text-slate-300"}),message:"目前沒有伙食規劃。點擊右下角新增！"});
   const grouped = items.reduce((a,i)=>{const d=i.day||1;if(!a[d])a[d]=[];a[d].push(i);return a},{});
   const order = ['breakfast','lunch','tea','dinner','snack'];
@@ -51,7 +58,13 @@ const MealList = ({items, onToggle, onEdit, onDelete}) => {
     Object.keys(grouped).sort((a,b)=>a-b).map(day=>
       React.createElement('div',{key:day,className:"bg-slate-50 p-4 rounded-xl border border-slate-200 anim-fadeIn"},
         React.createElement('h2',{className:"font-bold text-slate-700 mb-3 text-lg border-b pb-2"},'第 '+day+' 天'),
-        React.createElement('div',{className:"space-y-3"},grouped[day].sort((a,b)=>order.indexOf(a.mealType)-order.indexOf(b.mealType)).map(item=>React.createElement(ItemCard,{key:item.id,item,onToggle,onEdit,onDelete})))
+        React.createElement('div',{className:"space-y-3"},grouped[day].sort((a,b)=>order.indexOf(a.mealType)-order.indexOf(b.mealType)).map(item=>
+          React.createElement(ItemCard,{key:item.id,item,onToggle,onEdit,onDelete,
+            selectable:true,
+            isSelected:selectedIds?.includes(item.id),
+            onSelect:onSelectId
+          })
+        ))
       )
     )
   );
