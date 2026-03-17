@@ -6,6 +6,11 @@ function App() {
   const [loginMode,setLoginMode]=useState('join');
   const [loginError,setLoginError]=useState('');
   const [loginLoading,setLoginLoading]=useState(false);
+  // 邀請連結: 從 URL ?room= 取得，用於顯示簡化加入介面
+  const [inviteRoomId]=useState(()=>{
+    if(typeof window==='undefined') return '';
+    return new URLSearchParams(window.location.search).get('room')||'';
+  });
   const [isJoined,setIsJoined]=useState(()=>localStorage.getItem('campsync_isJoined')==='true');
   const [hasEnteredCamp,setHasEnteredCamp]=useState(()=>localStorage.getItem('campsync_hasEnteredCamp')==='true');
   const [members,setMembers]=useState([]);
@@ -294,8 +299,10 @@ function App() {
         setRoomId(fId.toLowerCase());setIsJoined(true);setHasEnteredCamp(false);setPassword('');
         localStorage.setItem('campsync_roomId',fId.toLowerCase());localStorage.setItem('campsync_userName',userName.trim());
         localStorage.setItem('campsync_isJoined','true');localStorage.setItem('campsync_hasEnteredCamp','false');
+        // 清除 URL 邀請參數
+        if(typeof window!=='undefined') window.history.replaceState({},document.title,window.location.pathname);
       }else{
-        if(result.error==='ROOM_NOT_FOUND')setLoginError('找不到此房間，請確認代碼是否正確');
+        if(result.error==='ROOM_NOT_FOUND')setLoginError('找不到此房間，房間可能已結束活動並封存');
         else if(result.error==='WRONG_PASSWORD')setLoginError('密碼錯誤，請重新輸入');
         else if(result.error==='ROOM_CLOSED')setLoginError('這組房間代碼已經結束使用了！');
         else if(result.error==='MISSING_PASSWORD')setLoginError('請輸入密碼');
@@ -305,41 +312,14 @@ function App() {
     finally{setLoginLoading(false)}
   };
 
-  // ===== URL 自動加入 =====
+  // ===== URL 參數預填房間代碼 =====
   useEffect(()=>{
-    const autoJoin=async()=>{
-      if(typeof window==='undefined')return;
-      const room=new URLSearchParams(window.location.search).get('room');
-      const pwd=new URLSearchParams(window.location.search).get('pwd');
-      
-      if(room&&!isJoined){
-        // 預先填入房間代碼並切換到加入模式
-        setRoomId(room.trim());
-        setLoginMode('join');
-        
-        if(pwd&&userName){
-          // 有密碼就自動嘗試加入
-          const fId=room.trim().toUpperCase();
-          try{
-            const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'join',roomId:fId,data:{userName:userName.trim(),password:pwd}})});
-            const result=await res.json();
-            if(result.success){
-              setRoomId(fId.toLowerCase());setIsJoined(true);setHasEnteredCamp(false);
-              localStorage.setItem('campsync_roomId',fId.toLowerCase());localStorage.setItem('campsync_userName',userName.trim());
-              localStorage.setItem('campsync_isJoined','true');localStorage.setItem('campsync_hasEnteredCamp','false');
-              window.history.replaceState({},document.title,window.location.pathname);
-            }else{
-              if(result.error==='WRONG_PASSWORD')setLoginError('連結中的密碼錯誤，請手動輸入密碼加入');
-              else if(result.error==='ROOM_NOT_FOUND')setLoginError('連結中的房間不存在，可能已結束活動');
-            }
-          }catch(e){console.error("Auto join failed:",e)}
-        }
-        // 沒有密碼時：只預填房間代碼，使用者手動輸入密碼加入
-        // 清除 URL 參數避免重複觸發
-        window.history.replaceState({},document.title,window.location.pathname);
-      }
-    };autoJoin();
-  },[isJoined,userName]);
+    if(typeof window==='undefined')return;
+    if(inviteRoomId&&!isJoined){
+      setRoomId(inviteRoomId.trim());
+      setLoginMode('join');
+    }
+  },[inviteRoomId,isJoined]);
 
   const handleLeaveRoom=()=>{
     setIsJoined(false);setRoomId('');setSharedItems([]);setPrepItems([]);setMembers([]);setHistoryLogs([]);setSelectedIds([]);setHasEnteredCamp(false);setPassword('');setLoginError('');setHasImported(false);
@@ -385,6 +365,60 @@ function App() {
   if(!isJoined){
     const isCreate = loginMode==='create';
     const handleSubmit = isCreate ? handleCreateRoom : handleJoinRoom;
+    const hasInvite = !!inviteRoomId; // 是否從分享連結/QR 進入
+
+    // === 邀請連結簡化加入介面 ===
+    if(hasInvite){
+      return e('div',{className:"min-h-screen bg-gradient-to-br from-emerald-50 via-slate-50 to-emerald-50 flex flex-col items-center justify-center p-4"},
+        e('div',{className:"max-w-sm w-full bg-white rounded-2xl shadow-xl overflow-hidden anim-fadeIn"},
+          // Header: 顯示正在進入的房間
+          e('div',{className:"bg-gradient-to-r from-emerald-600 to-emerald-500 p-6 text-center"},
+            e('div',{className:"w-14 h-14 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg"},e(Icon,{name:'doorOpen',size:28,className:"text-emerald-600"})),
+            e('p',{className:"text-emerald-100 text-sm mb-1"},'你正在加入房間'),
+            e('h1',{className:"text-2xl font-extrabold text-white tracking-wider"},inviteRoomId.trim().toUpperCase()),
+            e('p',{className:"text-emerald-200 text-xs mt-2"},'請輸入暱稱與房間密碼加入')
+          ),
+          // 表單: 只需暱稱 + 密碼
+          e('form',{onSubmit:handleJoinRoom,className:"p-6 space-y-4"},
+            e('div',{},
+              e('label',{className:"block text-sm font-medium text-slate-700 mb-1.5"},'你的暱稱'),
+              e('div',{className:"relative"},
+                e('div',{className:"absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"},e(Icon,{name:'user',size:18,className:"text-slate-400"})),
+                e('input',{type:"text",required:true,value:userName,onChange:ev=>setUserName(ev.target.value),className:"w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm",placeholder:"輸入你的暱稱，例如：小明"})
+              )
+            ),
+            e('div',{},
+              e('label',{className:"block text-sm font-medium text-slate-700 mb-1.5"},'房間密碼'),
+              e('div',{className:"relative"},
+                e('div',{className:"absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"},
+                  e('svg',{xmlns:"http://www.w3.org/2000/svg",width:18,height:18,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round",className:"text-slate-400"},
+                    e('rect',{width:18,height:11,x:3,y:11,rx:2,ry:2}),
+                    e('path',{d:"M7 11V7a5 5 0 0 1 10 0v4"})
+                  )
+                ),
+                e('input',{type:"password",required:true,value:password,onChange:ev=>setPassword(ev.target.value),className:"w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm",placeholder:"向房間建立者取得密碼"})
+              )
+            ),
+            loginError&&e('div',{className:"bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl flex items-center gap-2"},
+              e(Icon,{name:'alertTriangle',size:16}),e('span',{},loginError)
+            ),
+            e('button',{type:"submit",disabled:loginLoading,className:"w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2"},
+              loginLoading
+                ? e(React.Fragment,{},e(Icon,{name:'loader2',size:20,className:"anim-spin"}),' 加入中...')
+                : e(React.Fragment,{},e(Icon,{name:'arrowRight',size:20}),' 加入房間')
+            ),
+            e('p',{className:"text-center text-xs text-slate-400 mt-2"},'密碼由房間建立者提供')
+          )
+        ),
+        // 底部: CampSync 品牌 + 回到首頁
+        e('div',{className:"mt-6 text-center"},
+          e('p',{className:"text-slate-400 text-xs flex items-center justify-center gap-1"},e(Icon,{name:'tent',size:14}),' CampSync 露營協作平台'),
+          e('button',{onClick:()=>{window.location.href=window.location.pathname},className:"text-emerald-600 text-xs font-medium mt-2 hover:text-emerald-700"},'或者，建立自己的房間 →')
+        )
+      );
+    }
+
+    // === 一般登入介面（建立/加入）===
     return e('div',{className:"min-h-screen bg-gradient-to-br from-emerald-50 via-slate-50 to-emerald-50 flex flex-col items-center justify-center p-4"},
       e('div',{className:"max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden anim-fadeIn"},
         e('div',{className:"bg-gradient-to-r from-emerald-600 to-emerald-500 p-8 text-center"},
