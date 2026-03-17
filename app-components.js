@@ -28,7 +28,7 @@ const ItemCard = ({item, onToggle, onEdit, onDelete, isPersonal, selectable, isS
         ),
         React.createElement('div',{className:"flex items-center gap-3 text-sm text-slate-500 mt-1"},
           !isPrep&&React.createElement('span',{className:"flex items-center gap-1"},React.createElement(Icon,{name:'user',size:12}),item.assignee||'未指派'),
-          item.price>0&&React.createElement('span',{className:"text-emerald-600 font-medium"},'$'+item.price+' ('+item.payer+'付)')
+          !isPrep&&item.price>0&&React.createElement('span',{className:"text-emerald-600 font-medium"},'$'+item.price+' ('+item.payer+'付)')
         )
       )
     ),
