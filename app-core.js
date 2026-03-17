@@ -34,7 +34,9 @@ const Icon = ({ name, size = 20, className = "" }) => {
     checkSquare: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/>`,
     square: `<rect width="18" height="18" x="3" y="3" rx="2"/>`,
     doorOpen: `<path d="M13 4h3a2 2 0 012 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 01-1.242.97L5 20V5.562a2 2 0 011.515-1.94l4-1A2 2 0 0113 4.561Z"/>`,
-    backpack: `<path d="M4 10a4 4 0 014-4h8a4 4 0 014 4v10a2 2 0 01-2 2H6a2 2 0 01-2-2Z"/><path d="M9 6V4a2 2 0 012-2h2a2 2 0 012 2v2"/><path d="M8 21v-5a2 2 0 012-2h4a2 2 0 012 2v5"/><path d="M8 10h8"/><path d="M8 18h8"/>`
+    backpack: `<path d="M4 10a4 4 0 014-4h8a4 4 0 014 4v10a2 2 0 01-2 2H6a2 2 0 01-2-2Z"/><path d="M9 6V4a2 2 0 012-2h2a2 2 0 012 2v2"/><path d="M8 21v-5a2 2 0 012-2h4a2 2 0 012 2v5"/><path d="M8 10h8"/><path d="M8 18h8"/>`,
+    history: `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>`,
+    clock: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`
   };
   return React.createElement('svg', {
     xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24",
