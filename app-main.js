@@ -11,15 +11,23 @@ function App() {
   const [members,setMembers]=useState([]);
   const [sharedItems,setSharedItems]=useState([]); // 公共裝備 + 伙食 (from Google Sheet)
   const [prepItems,setPrepItems]=useState([]);     // 個人行李 (from localStorage, 私密)
+  const [historyLogs,setHistoryLogs]=useState([]); // 歷史紀錄
   const [currentTab,setCurrentTab]=useState('equipment');
+  
+  // Modals & State
   const [isModalOpen,setIsModalOpen]=useState(false);
   const [isImportModalOpen,setIsImportModalOpen]=useState(false);
   const [isMemberModalOpen,setIsMemberModalOpen]=useState(false);
+  const [isEndModalOpen,setIsEndModalOpen]=useState(false);
+  const [isHistoryModalOpen,setIsHistoryModalOpen]=useState(false);
+  
   const [editingItem,setEditingItem]=useState(null);
   const [itemToDelete,setItemToDelete]=useState(null);
   const [isImporting,setIsImporting]=useState(false);
-  const [isEndModalOpen,setIsEndModalOpen]=useState(false);
   const [syncStatus,setSyncStatus]=useState('idle');
+  
+  // 批次操作
+  const [selectedIds,setSelectedIds]=useState([]);
 
   // ===== 個人行李 localStorage 工具 =====
   const getPrepKey = useCallback(()=>{
@@ -48,7 +56,7 @@ function App() {
   const isSyncingRef = useRef(false);
 
   const fetchRoomData = useCallback(async()=>{
-    if(!roomId)return;
+    if(!roomId||!isJoined)return;
     if(isSyncingRef.current) return;
     try{
       const res=await fetch(`${GAS_URL}?roomId=${roomId.toUpperCase()}&t=${Date.now()}`);
@@ -64,11 +72,12 @@ function App() {
         fetchRetryCount.current=0;
         if(!isSyncingRef.current){
           setSharedItems(result.items||[]);
+          setHistoryLogs(result.logs||[]);
           setMembers(Array.from(new Set([...(result.members||[]),userName])));
         }
       }else if(result.error==='ROOM_CLOSED'){alert("此房間活動已結束並封存。");handleLeaveRoom()}
     }catch(e){console.error("Fetch Error:",e)}
-  },[roomId,userName]);
+  },[roomId,userName,isJoined]);
 
   // 加入房間後開始輪詢 + 載入個人行李
   useEffect(()=>{
@@ -86,24 +95,45 @@ function App() {
   const allItems = useMemo(()=>[...sharedItems,...prepItems],[sharedItems,prepItems]);
 
   // ===== 同步共用 items 到 Google Sheet =====
-  const syncToSheet=async(action,data)=>{
+  const syncToSheet=async(action,data,logMsg)=>{
     if(!roomId)return;
     isSyncingRef.current=true;
     setSyncStatus('syncing');
+    
+    // Optimistic UI updates (only for single items, batch delete UI handled post-sync to avoid complexity)
     if(action==='upsert'){
       const arr=Array.isArray(data)?data:[data];
       setSharedItems(prev=>{const n=[...prev];arr.forEach(ni=>{const idx=n.findIndex(i=>i.id===ni.id);if(idx>-1)n[idx]=ni;else n.push(ni)});return n});
     }else if(action==='delete'){
       setSharedItems(prev=>prev.filter(i=>i.id!==data.id));
     }
+
     try{
-      const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,roomId:roomId.toUpperCase(),data})});
+      const payload = {action,roomId:roomId.toUpperCase(),data};
+      if(logMsg) { payload.logMsg = logMsg; payload.userName = userName; }
+
+      const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
       const result=await res.json();
+      
       if(!result.success) console.error('[CampSync] Sync failed:', result.error);
       if(result.error==='ROOM_CLOSED'){alert("此房間活動已結束並封存。");handleLeaveRoom();return}
+      
+      // Update history immediately locally if logging
+      if(logMsg) {
+        setHistoryLogs(prev => [...prev, {
+          updatedAt: new Date().toISOString(),
+          assignee: userName,
+          name: logMsg, // action text
+          type: '_log'
+        }]);
+      }
+
       setSyncStatus('saved');setTimeout(()=>setSyncStatus('idle'),3000);
     }catch(e){console.error("Sync Error:",e);setSyncStatus('error')}
-    finally{isSyncingRef.current=false}
+    finally{
+      isSyncingRef.current=false;
+      if(action==='delete_batch') fetchRoomData(); // Refetch after batch delete to ensure UI sync
+    }
   };
 
   // ===== 個人行李操作 (純 localStorage) =====
@@ -135,7 +165,9 @@ function App() {
   const saveSharedItem=async(itemData)=>{
     if(!userName||!roomId)return;
     const tid=itemData.id||genId();
-    await syncToSheet('upsert',{...itemData,id:tid,updatedAt:new Date().toISOString()});
+    const isEditing = !!sharedItems.find(i=>i.id===tid);
+    const actionText = isEditing ? `編輯了 ${itemData.name}` : `新增了 ${itemData.name}`;
+    await syncToSheet('upsert',{...itemData,id:tid,updatedAt:new Date().toISOString()}, actionText);
     setIsModalOpen(false);setEditingItem(null);
   };
 
@@ -144,7 +176,7 @@ function App() {
     if(itemToDelete.type==='prep'){
       deletePrepItem(itemToDelete.id);
     }else{
-      await syncToSheet('delete',{id:itemToDelete.id});
+      await syncToSheet('delete',{id:itemToDelete.id}, `刪除了 ${itemToDelete.name}`);
     }
     setItemToDelete(null);
   };
@@ -154,7 +186,19 @@ function App() {
     if(item.type==='prep'){
       togglePrepPacked(item);
     }else{
-      await syncToSheet('upsert',{...item,isPacked:!item.isPacked});
+      await syncToSheet('upsert',{...item,isPacked:!item.isPacked}); // Don't log simple packing toggles
+    }
+  };
+
+  const handleSelectId=(id)=>{
+    setSelectedIds(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+  };
+
+  const handleBatchDelete=async()=>{
+    if(!userName||!roomId||selectedIds.length===0)return;
+    if(confirm(`確定要刪除選取的 ${selectedIds.length} 個項目嗎？此操作無法還原。`)){
+      await syncToSheet('delete_batch', selectedIds, `批次刪除了 ${selectedIds.length} 個項目`);
+      setSelectedIds([]);
     }
   };
 
@@ -240,7 +284,7 @@ function App() {
   },[isJoined,userName]);
 
   const handleLeaveRoom=()=>{
-    setIsJoined(false);setRoomId('');setSharedItems([]);setPrepItems([]);setMembers([]);setHasEnteredCamp(false);setPassword('');setLoginError('');
+    setIsJoined(false);setRoomId('');setSharedItems([]);setPrepItems([]);setMembers([]);setHistoryLogs([]);setSelectedIds([]);setHasEnteredCamp(false);setPassword('');setLoginError('');
     ['campsync_roomId','campsync_userName','campsync_isJoined','campsync_hasEnteredCamp'].forEach(k=>localStorage.removeItem(k));
   };
 
@@ -263,6 +307,15 @@ function App() {
     syncStatus==='saved'&&e(React.Fragment,{},e(Icon,{name:'check',size:12}),' 已儲存'),
     syncStatus==='error'&&e(React.Fragment,{},e(Icon,{name:'alertTriangle',size:12}),' 失敗')
   );
+
+  // 防連點 Overlay
+  const LoadingOverlay = syncStatus === 'syncing' ? e('div',{className:"fixed inset-0 z-[70] flex flex-col items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px] cursor-wait"},
+    e('div',{className:"bg-white p-5 rounded-2xl shadow-2xl flex flex-col items-center anim-zoomIn"},
+      e(Icon,{name:'loader2',size:40,className:"text-emerald-500 anim-spin mb-3"}),
+      e('p',{className:"font-bold text-slate-800"},'處理中...'),
+      e('p',{className:"text-xs text-slate-500 mt-1"},'請稍候，資料正在同步至伺服器')
+    )
+  ) : null;
 
   // ===== Login Screen =====
   if(!isJoined){
@@ -324,6 +377,7 @@ function App() {
 
   // ===== Main App =====
   return e('div',{className:"min-h-screen bg-slate-50 flex justify-center"},
+    LoadingOverlay,
     e('div',{className:"w-full max-w-md bg-white min-h-screen relative shadow-2xl flex flex-col"},
       // Header
       e('header',{className:`${hasEnteredCamp?'bg-gradient-to-r from-emerald-600 to-emerald-500':'bg-slate-800'} text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10 shadow-md transition-colors duration-500`},
@@ -337,12 +391,16 @@ function App() {
         ),
         e('div',{className:"flex items-center gap-2"},
           hasEnteredCamp&&e('button',{onClick:()=>setHasEnteredCamp(false),className:"p-2 bg-emerald-700 hover:bg-emerald-800 rounded-full transition-colors",title:"回個人清單"},e(Icon,{name:'clipboardList',size:16})),
+          hasEnteredCamp&&e('button',{onClick:()=>setIsHistoryModalOpen(true),className:"p-2 bg-emerald-700 hover:bg-emerald-800 rounded-full transition-colors relative",title:"歷史紀錄"},
+             e(Icon,{name:'history',size:16}),
+             historyLogs.length>0&&e('span',{className:"absolute top-1 right-1 w-2 h-2 bg-red-400 rounded-full"})
+          ),
           e('button',{onClick:()=>setIsMemberModalOpen(true),className:`flex items-center gap-1 px-3 py-1.5 rounded-full transition-colors text-xs font-medium ${hasEnteredCamp?'bg-emerald-700/50 hover:bg-emerald-700':'bg-slate-700 hover:bg-slate-600'}`},e(Icon,{name:'users',size:12}),e('span',{},members.length)),
           e('button',{onClick:handleLeaveRoom,className:`p-2 rounded-full transition-colors ${hasEnteredCamp?'hover:bg-emerald-700':'hover:bg-slate-700'}`,title:"登出"},e(Icon,{name:'logOut',size:20}))
         )
       ),
       // Main content
-      e('main',{className:"flex-1 overflow-y-auto p-4 pb-24"},
+      e('main',{className:"flex-1 overflow-y-auto p-4 pb-32 relative"},
         // === 個人行前準備頁 ===
         !hasEnteredCamp&&e('div',{className:"space-y-6 anim-fadeIn"},
           e('div',{className:"bg-gradient-to-r from-slate-100 to-emerald-50 p-4 rounded-xl border border-slate-200"},
@@ -369,25 +427,38 @@ function App() {
         ),
         // === 進入營地後的公共頁面 ===
         hasEnteredCamp&&e('div',{className:"anim-fadeIn"},
-          currentTab==='equipment'&&e(ItemList,{items:sharedItems.filter(i=>i.type==='equipment'),onToggle:toggleSharedPacked,onEdit:i=>{setEditingItem(i);setIsModalOpen(true)},onDelete:setItemToDelete}),
-          currentTab==='meals'&&e(MealList,{items:sharedItems.filter(i=>i.type==='meal'),onToggle:toggleSharedPacked,onEdit:i=>{setEditingItem(i);setIsModalOpen(true)},onDelete:setItemToDelete}),
+          currentTab==='equipment'&&e(ItemList,{items:sharedItems.filter(i=>i.type==='equipment'),onToggle:toggleSharedPacked,onEdit:i=>{setEditingItem(i);setIsModalOpen(true)},onDelete:setItemToDelete,selectedIds,onSelectId:handleSelectId}),
+          currentTab==='meals'&&e(MealList,{items:sharedItems.filter(i=>i.type==='meal'),onToggle:toggleSharedPacked,onEdit:i=>{setEditingItem(i);setIsModalOpen(true)},onDelete:setItemToDelete,selectedIds,onSelectId:handleSelectId}),
           currentTab==='settlement'&&e(SettlementView,{items:allItems,members,onEndActivity:()=>setIsEndModalOpen(true)})
         )
       ),
+
+      // 批次刪除的浮動工具列
+      (hasEnteredCamp && currentTab!=='settlement' && selectedIds.length>0) && 
+        e('div',{className:"absolute bottom-[72px] left-4 right-4 bg-slate-800 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between anim-slideUp z-20"},
+          e('div',{className:"flex items-center gap-2"},
+            e('button',{onClick:()=>setSelectedIds([]),className:"p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"},e(Icon,{name:'x',size:18})),
+            e('span',{className:"font-medium text-sm"},`已選取 ${selectedIds.length} 項`)
+          ),
+          e('button',{onClick:handleBatchDelete,className:"bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-xl text-sm font-bold flex items-center gap-1 transition-colors"},e(Icon,{name:'trash2',size:16}),'刪除')
+        ),
+
       // FAB
-      currentTab!=='settlement'&&e('button',{onClick:()=>{setEditingItem(null);setIsModalOpen(true)},className:`fixed bottom-24 right-4 sm:absolute text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-10 ${hasEnteredCamp?'bg-emerald-500 hover:bg-emerald-600':'bg-slate-700 hover:bg-slate-800'}`},e(Icon,{name:'plus',size:24})),
+      (currentTab!=='settlement'&&selectedIds.length===0)&&e('button',{onClick:()=>{setEditingItem(null);setIsModalOpen(true)},className:`fixed bottom-24 right-4 sm:absolute text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-10 ${hasEnteredCamp?'bg-emerald-500 hover:bg-emerald-600':'bg-slate-700 hover:bg-slate-800'}`},e(Icon,{name:'plus',size:24})),
+      
       // Bottom nav
-      hasEnteredCamp&&e('nav',{className:"bg-white border-t border-slate-200 fixed bottom-0 w-full max-w-md flex justify-around p-2 pb-safe z-20"},
-        e(NavButton,{active:currentTab==='equipment',onClick:()=>setCurrentTab('equipment'),iconName:'tent',label:'公共裝備'}),
-        e(NavButton,{active:currentTab==='meals',onClick:()=>setCurrentTab('meals'),iconName:'utensils',label:'伙食計劃'}),
-        e(NavButton,{active:currentTab==='settlement',onClick:()=>setCurrentTab('settlement'),iconName:'calculator',label:'費用結算'})
+      hasEnteredCamp&&e('nav',{className:"bg-white border-t border-slate-200 fixed bottom-0 w-full max-w-md flex justify-around p-2 pb-safe z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"},
+        e(NavButton,{active:currentTab==='equipment',onClick:()=>{setCurrentTab('equipment');setSelectedIds([])},iconName:'tent',label:'公共裝備'}),
+        e(NavButton,{active:currentTab==='meals',onClick:()=>{setCurrentTab('meals');setSelectedIds([])},iconName:'utensils',label:'伙食計劃'}),
+        e(NavButton,{active:currentTab==='settlement',onClick:()=>{setCurrentTab('settlement');setSelectedIds([])},iconName:'calculator',label:'費用結算'})
       ),
       // Modals
       isModalOpen&&e(ItemModal,{isOpen:isModalOpen,onClose:()=>setIsModalOpen(false),onSave:saveItem,initialData:editingItem,type:editingItem?editingItem.type:getCurrentType(),members,currentUser:userName}),
       isImportModalOpen&&e(ImportSelectionModal,{isOpen:isImportModalOpen,onClose:()=>setIsImportModalOpen(false),onImport:handleBatchImport,existingItems:hasEnteredCamp?sharedItems:prepItems,isImporting}),
       itemToDelete&&e(DeleteConfirmModal,{item:itemToDelete,onConfirm:deleteSharedItem,onCancel:()=>setItemToDelete(null)}),
       isMemberModalOpen&&e(MemberModal,{isOpen:isMemberModalOpen,onClose:()=>setIsMemberModalOpen(false),members,currentUser:userName,roomId}),
-      isEndModalOpen&&e(EndConfirmModal,{onConfirm:handleEndActivity,onCancel:()=>setIsEndModalOpen(false)})
+      isEndModalOpen&&e(EndConfirmModal,{onConfirm:handleEndActivity,onCancel:()=>setIsEndModalOpen(false)}),
+      isHistoryModalOpen&&e(HistoryModal,{isOpen:isHistoryModalOpen,onClose:()=>setIsHistoryModalOpen(false),logs:historyLogs})
     )
   );
 }
