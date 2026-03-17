@@ -109,10 +109,7 @@ const InlinePrepImport = ({onImport, existingItems, isImporting}) => {
     const r={};Object.entries(PREP_CATEGORIES).forEach(([cat,items])=>{const f=items.filter(i=>!existingNames.has(i));if(f.length>0)r[cat]=f});return r;
   },[existingItems]);
   const allAvail = Object.values(availableCategories).flat();
-  const [selected, setSelected] = useState(()=>allAvail);
-  
-  // 當 availableCategories 改變時重新全選
-  useEffect(()=>{setSelected(Object.values(availableCategories).flat())},[availableCategories]);
+  const [selected, setSelected] = useState([]);
 
   const toggleItem = (item) => setSelected(p=>p.includes(item)?p.filter(i=>i!==item):[...p,item]);
   const toggleAll = () => setSelected(selected.length===allAvail.length?[]:allAvail);
