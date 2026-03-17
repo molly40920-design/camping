@@ -186,7 +186,7 @@ const ItemModal = ({isOpen, onClose, onSave, initialData, type, members, current
             isMeal&&field('天數',React.createElement('select',{value:formData.day,onChange:e=>setFormData({...formData,day:parseInt(e.target.value)}),className:"w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none",disabled:isSaving},[1,2,3,4,5].map(d=>React.createElement('option',{key:d,value:d},'第 '+d+' 天'))))
           ),
           isMeal&&field('餐別',React.createElement('div',{className:"flex flex-wrap gap-2"},Object.entries(MEAL_TYPES).map(([k,v])=>React.createElement('button',{key:k,type:"button",onClick:()=>setFormData({...formData,mealType:k}),disabled:isSaving,className:`px-3 py-1.5 rounded-full text-sm border transition-colors ${formData.mealType===k?'bg-emerald-500 text-white border-emerald-500':'bg-white text-slate-600 border-slate-200'}`},v)))),
-          React.createElement('div',{className:"border-t pt-4 mt-2"},
+          !isPrep&&React.createElement('div',{className:"border-t pt-4 mt-2"},
             React.createElement('h3',{className:"text-sm font-bold text-slate-800 mb-3 flex items-center gap-1"},React.createElement(Icon,{name:'receipt',size:16,className:"text-emerald-600"}),' 費用與拆帳'),
             React.createElement('div',{className:"grid grid-cols-2 gap-4"},
               field('金額 ($)',React.createElement('input',{type:"number",min:"0",value:formData.price,onChange:e=>setFormData({...formData,price:e.target.value}),className:"w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none",disabled:isSaving})),
