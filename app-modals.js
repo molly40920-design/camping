@@ -147,3 +147,41 @@ const ItemModal = ({isOpen, onClose, onSave, initialData, type, members, current
     )
   );
 };
+
+const HistoryModal = ({isOpen, onClose, logs}) => {
+  if(!isOpen) return null;
+  return React.createElement('div',{className:"fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"},
+    React.createElement('div',{className:"bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl anim-zoomIn max-h-[85vh] flex flex-col"},
+      React.createElement('div',{className:"flex justify-between items-center mb-4 border-b pb-3"},
+        React.createElement('h3',{className:"text-lg font-bold text-slate-800 flex items-center gap-2"},React.createElement(Icon,{name:'history',size:20,className:"text-emerald-600"}),' 歷史活動紀錄'),
+        React.createElement('button',{onClick:onClose,className:"p-1 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"},React.createElement(Icon,{name:'x',size:20}))
+      ),
+      React.createElement('div',{className:"flex-1 overflow-y-auto space-y-3 pr-1"},
+        (!logs || logs.length === 0) 
+          ? React.createElement('div',{className:"text-center text-slate-400 py-10 flex flex-col items-center"},
+              React.createElement(Icon,{name:'clock',size:32,className:"mb-2 opacity-50"}),
+              '目前沒有任何活動紀錄。'
+            )
+          : [...logs].sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).map((log, idx) => {
+              const date = new Date(log.updatedAt);
+              const timeStr = date.getMonth()+1 + '/' + date.getDate() + ' ' + String(date.getHours()).padStart(2,'0') + ':' + String(date.getMinutes()).padStart(2,'0');
+              const actionText = log.name || ''; // Name holds the action text
+              const doer = log.assignee || '系統'; // Assignee holds the doer
+              
+              // Simple parsing to colorize actions
+              const isAdd = actionText.includes('新增');
+              const isDel = actionText.includes('刪除');
+              
+              return React.createElement('div',{key:idx,className:"flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 anim-fadeIn"},
+                React.createElement('div',{className:"w-10 text-[10px] font-mono text-slate-400 shrink-0 text-right mt-1"}, timeStr),
+                React.createElement('div',{className:`w-2 h-2 mt-2 rounded-full shrink-0 ${isAdd?'bg-emerald-400':isDel?'bg-red-400':'bg-blue-400'}`}),
+                React.createElement('div',{className:"flex-1 text-sm text-slate-700 leading-snug"},
+                  React.createElement('strong',{className:"text-slate-800 mr-2 border-b border-emerald-200 pb-0.5"}, doer),
+                  React.createElement('span',{}, actionText)
+                )
+              );
+            })
+      )
+    )
+  );
+};
