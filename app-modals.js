@@ -186,6 +186,7 @@ const ItemModal = ({isOpen, onClose, onSave, initialData, type, members, current
             isMeal&&field('天數',React.createElement('select',{value:formData.day,onChange:e=>setFormData({...formData,day:parseInt(e.target.value)}),className:"w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none",disabled:isSaving},[1,2,3,4,5].map(d=>React.createElement('option',{key:d,value:d},'第 '+d+' 天'))))
           ),
           isMeal&&field('餐別',React.createElement('div',{className:"flex flex-wrap gap-2"},Object.entries(MEAL_TYPES).map(([k,v])=>React.createElement('button',{key:k,type:"button",onClick:()=>setFormData({...formData,mealType:k}),disabled:isSaving,className:`px-3 py-1.5 rounded-full text-sm border transition-colors ${formData.mealType===k?'bg-emerald-500 text-white border-emerald-500':'bg-white text-slate-600 border-slate-200'}`},v)))),
+          // 費用與拆帳 — 個人物品(prep)不顯示
           !isPrep&&React.createElement('div',{className:"border-t pt-4 mt-2"},
             React.createElement('h3',{className:"text-sm font-bold text-slate-800 mb-3 flex items-center gap-1"},React.createElement(Icon,{name:'receipt',size:16,className:"text-emerald-600"}),' 費用與拆帳'),
             React.createElement('div',{className:"grid grid-cols-2 gap-4"},
@@ -244,6 +245,78 @@ const HistoryModal = ({isOpen, onClose, logs}) => {
                 )
               );
             })
+      )
+    )
+  );
+};
+
+// ===== 分享房間 Modal (QR + Link) =====
+const ShareModal = ({isOpen, onClose, roomId}) => {
+  const [copied, setCopied] = useState(false);
+  if(!isOpen) return null;
+
+  // 產生分享連結（只帶 room，不帶密碼，安全考量）
+  const baseUrl = window.location.origin + window.location.pathname;
+  const shareUrl = baseUrl + '?room=' + encodeURIComponent(roomId.toUpperCase());
+
+  // QR Code via qrserver.com API (free, no dependency)
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(shareUrl);
+
+  const handleCopy = () => {
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(shareUrl).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>fallbackCopy());
+    }else{fallbackCopy()}
+  };
+  const fallbackCopy = () => {
+    const ta=document.createElement('textarea');ta.value=shareUrl;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');setCopied(true);setTimeout(()=>setCopied(false),2000)}catch(e){}
+    document.body.removeChild(ta);
+  };
+
+  const handleNativeShare = () => {
+    if(navigator.share){
+      navigator.share({title:'CampSync 露營房間邀請',text:'加入我們的露營房間「'+roomId.toUpperCase()+'」！請輸入密碼加入。',url:shareUrl}).catch(()=>{});
+    }
+  };
+
+  return React.createElement('div',{className:"fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"},
+    React.createElement('div',{className:"bg-white w-full max-w-sm rounded-2xl shadow-2xl anim-zoomIn overflow-hidden"},
+      // Header
+      React.createElement('div',{className:"bg-gradient-to-r from-emerald-600 to-emerald-500 p-5 text-center text-white"},
+        React.createElement('div',{className:"flex justify-between items-start"},
+          React.createElement('div',{}),
+          React.createElement('button',{onClick:onClose,className:"p-1 hover:bg-white/20 rounded-full transition-colors"},React.createElement(Icon,{name:'x',size:20}))
+        ),
+        React.createElement('div',{className:"flex flex-col items-center"},
+          React.createElement(Icon,{name:'share2',size:28,className:"mb-2"}),
+          React.createElement('h3',{className:"text-lg font-bold"},'邀請朋友加入'),
+          React.createElement('p',{className:"text-emerald-100 text-sm mt-1"},'房間代碼：'+roomId.toUpperCase())
+        )
+      ),
+      // QR Code
+      React.createElement('div',{className:"flex flex-col items-center p-6"},
+        React.createElement('div',{className:"bg-white p-3 rounded-2xl border-2 border-slate-100 shadow-sm mb-4"},
+          React.createElement('img',{src:qrUrl,alt:'QR Code',width:200,height:200,className:"rounded-lg",style:{imageRendering:'pixelated'}})
+        ),
+        React.createElement('p',{className:"text-xs text-slate-400 mb-4"},'掃描 QR Code 或分享連結，輸入密碼即可加入')
+      ),
+      // Link + Buttons
+      React.createElement('div',{className:"px-6 pb-6 space-y-3"},
+        // 連結顯示
+        React.createElement('div',{className:"flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3"},
+          React.createElement(Icon,{name:'link',size:16,className:"text-slate-400 shrink-0"}),
+          React.createElement('span',{className:"text-xs text-slate-600 truncate flex-1"},shareUrl),
+          React.createElement('button',{onClick:handleCopy,className:"shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors "+(copied?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600 hover:bg-slate-300')},
+            copied
+              ? React.createElement(React.Fragment,{},React.createElement(Icon,{name:'check',size:12}),' 已複製')
+              : React.createElement(React.Fragment,{},React.createElement(Icon,{name:'copy',size:12}),' 複製')
+          )
+        ),
+        // 原生分享按鈕 (手機有效)
+        (typeof navigator!=='undefined'&&navigator.share)&&React.createElement('button',{onClick:handleNativeShare,className:"w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2"},
+          React.createElement(Icon,{name:'share2',size:18}),' 分享給朋友'
+        ),
+        React.createElement('p',{className:"text-center text-[11px] text-slate-400"},'朋友需要輸入房間密碼才能加入。房間結束後連結自動失效。')
       )
     )
   );
