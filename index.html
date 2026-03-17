@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CampSync - 露營協作平台</title>
+<meta name="description" content="輕量化露營協作平台，即時同步裝備、伙食與費用結算">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;box-sizing:border-box}
+body{margin:0;background:#f8fafc;overflow-x:hidden}
+.pb-safe{padding-bottom:max(env(safe-area-inset-bottom),8px)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
+@keyframes zoomIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.anim-spin{animation:spin 1s linear infinite}
+.anim-fadeIn{animation:fadeIn .3s ease}
+.anim-slideUp{animation:slideUp .25s ease}
+.anim-zoomIn{animation:zoomIn .2s ease}
+input,select,button{font-family:inherit}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="config.js"></script>
+<script src="app-core.js"></script>
+<script src="app-components.js"></script>
+<script src="app-modals.js"></script>
+<script src="app-main.js"></script>
+</body>
+</html>
