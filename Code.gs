@@ -53,6 +53,12 @@ function findActiveRoom(roomId) {
   return null;
 }
 
+function appendLog(sheet, logMsg, userName) {
+  if (logMsg && userName) {
+    sheet.appendRow([ Utilities.getUuid(), '_log', String(logMsg), String(userName), '', '', '', '', '', '', new Date().toISOString() ]);
+  }
+}
+
 // ===== GET 請求 (讀取房間資料) =====
 function doGet(e) {
   try {
@@ -84,6 +90,7 @@ function doGet(e) {
     var data = sheet.getDataRange().getValues();
     var headers = data[0];
     var items = [];
+    var logs = [];
     var membersSet = {};
 
     for (var i = 1; i < data.length; i++) {
@@ -93,6 +100,8 @@ function doGet(e) {
       }
       if (String(row.type).trim() === '_member') {
         membersSet[String(row.name).trim()] = true;
+      } else if (String(row.type).trim() === '_log') {
+        logs.push(row);
       } else {
         if (row.splitAmong && typeof row.splitAmong === 'string') {
           try { row.splitAmong = JSON.parse(row.splitAmong); } catch(err) { row.splitAmong = []; }
@@ -104,7 +113,7 @@ function doGet(e) {
       }
     }
 
-    return jsonResp({ success: true, items: items, members: Object.keys(membersSet) });
+    return jsonResp({ success: true, items: items, logs: logs, members: Object.keys(membersSet) });
   } catch (err) {
     return jsonResp({ success: false, error: 'GET_ERROR: ' + err.toString() });
   }
@@ -117,12 +126,15 @@ function doPost(e) {
     var action = body.action;
     var roomId = String(body.roomId || '').trim().toUpperCase();
     var data = body.data || {};
+    var logMsg = body.logMsg;
+    var userName = body.userName;
 
     switch (action) {
       case 'create_room': return handleCreateRoom(roomId, data);
       case 'join': return handleJoin(roomId, data);
-      case 'upsert': return handleUpsert(roomId, data);
-      case 'delete': return handleDelete(roomId, data);
+      case 'upsert': return handleUpsert(roomId, data, logMsg, userName);
+      case 'delete': return handleDelete(roomId, data, logMsg, userName);
+      case 'delete_batch': return handleDeleteBatch(roomId, data, logMsg, userName);
       case 'delete_sheet': return handleDeleteSheet(roomId);
       default: return jsonResp({ success: false, error: 'UNKNOWN_ACTION' });
     }
@@ -207,7 +219,7 @@ function handleJoin(roomId, data) {
 }
 
 // ===== Upsert 項目 =====
-function handleUpsert(roomId, data) {
+function handleUpsert(roomId, data, logMsg, userName) {
   var room = findActiveRoom(roomId);
   if (!room) return jsonResp({ success: false, error: 'ROOM_CLOSED' });
 
@@ -236,12 +248,14 @@ function handleUpsert(roomId, data) {
     }
   });
 
+  appendLog(sheet, logMsg, userName);
+
   SpreadsheetApp.flush();
   return jsonResp({ success: true });
 }
 
 // ===== 刪除項目 =====
-function handleDelete(roomId, data) {
+function handleDelete(roomId, data, logMsg, userName) {
   var room = findActiveRoom(roomId);
   if (!room) return jsonResp({ success: false, error: 'ROOM_CLOSED' });
 
@@ -256,6 +270,38 @@ function handleDelete(roomId, data) {
       break;
     }
   }
+
+  appendLog(sheet, logMsg, userName);
+
+  SpreadsheetApp.flush();
+  return jsonResp({ success: true });
+}
+
+// ===== 批次刪除項目 =====
+function handleDeleteBatch(roomId, ids, logMsg, userName) {
+  var room = findActiveRoom(roomId);
+  if (!room) return jsonResp({ success: false, error: 'ROOM_CLOSED' });
+
+  var ss = getSS();
+  var sheet = ss.getSheetByName(room.tabName);
+  if (!sheet) return jsonResp({ success: false, error: 'ROOM_CLOSED' });
+
+  if (!Array.isArray(ids)) {
+    return jsonResp({ success: false, error: 'IDS_NOT_ARRAY' });
+  }
+
+  var allData = sheet.getDataRange().getValues();
+  var idsMap = {};
+  ids.forEach(function(id) { idsMap[String(id).trim()] = true; });
+
+  // 從後面往前刪除才不會改變前面 row 的 index
+  for (var i = allData.length - 1; i >= 1; i--) {
+    if (idsMap[String(allData[i][0]).trim()]) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+
+  appendLog(sheet, logMsg, userName);
 
   SpreadsheetApp.flush();
   return jsonResp({ success: true });
@@ -290,3 +336,4 @@ function handleDeleteSheet(roomId) {
 function jsonResp(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
+
